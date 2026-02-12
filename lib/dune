@@ -1,0 +1,3 @@
+(library
+ (name ocamlsat)
+ (modules decision_heap common dimacs solver mono_vec mono_slice))

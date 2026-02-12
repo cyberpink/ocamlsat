@@ -1,0 +1,5 @@
+(executable
+ (public_name ocamlsat)
+ (name main)
+ (ocamlopt_flags (:standard -g -O3))
+ (libraries ocamlsat))
