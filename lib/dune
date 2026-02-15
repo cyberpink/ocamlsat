@@ -1,3 +1,7 @@
 (library
  (name ocamlsat)
- (modules decision_heap common dimacs solver mono_vec mono_slice))
+ (modules
+   mono_vec mono_slice
+   dimacs common
+   clause reason watch decision_heap clause_arena
+   solver state analyze reduce simplify))

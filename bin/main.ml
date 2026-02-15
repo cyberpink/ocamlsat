@@ -1,17 +1,19 @@
 open Ocamlsat
 open Common
+open State
 
 let (num_vars, num_clauses, clauses_pre) = Dimacs.parse ()
 let num_lits = (num_vars + 1) * 2
 let learned_initial = max num_clauses 100
 
-let state : Solver.state = {
+let state : state = {
   num_vars;
   num_lits;
 
   values = Bytes.make (num_vars + 1) (Char.chr lundef);
-  clauses = ClauseArena.create ();
-  watchers = Array.init num_lits (fun _ -> Watchlist.create ());
+  clauses = Clause_arena.create ();
+  watchers = Array.init num_lits (fun _ -> Watch.create ());
+  (* bin_watchers = Array.init num_lits (fun _ -> LitVec.create Lit.dummy); *)
   trail = Array.make num_vars Lit.dummy;
   trail_length = 0;
   trail_head = 0;
@@ -23,7 +25,8 @@ let state : Solver.state = {
   learned_lits = LitVec.create Lit.dummy;
   learned_limit = learned_initial;
   learned_growth = 1.1;
-  learned_clauses = ClauseVec.create ~capacity:learned_initial ClauseArena.Ref.dummy;
+  learned_clauses = Clause_arena.ClauseVec.create
+      ~capacity:learned_initial Clause_arena.Ref.dummy;
 
   unassigned_vars = Decision_heap.create (num_vars + 1);
 
@@ -32,9 +35,8 @@ let state : Solver.state = {
   next_restart = luby 1 * 100;
   restarts = 1;
 
-  units = 0;
-  simp_next = 100;
-  simp_inc = 100;
+  simp_assigns = 0;
+  simp_props = 0;
 
   saved_phase = Bytes.make (num_vars + 1) '\x01';
   target_phase = Bytes.make (num_vars + 1) '\x00';
@@ -68,18 +70,37 @@ let process_lits lits =
    with Skip -> LitSet.empty);
   lits_out
 
+module CA = Clause_arena
+let register_clause (s : state) (lits : LitVec.t) =
+  match LitVec.length lits with
+  | 0 -> raise_notrace Unsat
+  | 1 -> set_true s (LitVec.get lits 0) Reason.root
+  | 2 ->
+    let l0 = LitVec.get lits 0 in
+    let l1 = LitVec.get lits 1 in
+    let i0 = Lit.to_int l0 in
+    let i1 = Lit.to_int l1 in
+    Watch.push_bin s.watchers.(i0) l1;
+    Watch.push_bin s.watchers.(i1) l0
+  | length ->
+    let lits = LitVec.unsafe_slice ~offset:0 ~length lits in
+    let c = CA.alloc s.clauses false 0 lits in
+    let l0 = CA.get_lit s.clauses c 0 in
+    let l1 = CA.get_lit s.clauses c 1 in
+    Watch.push s.watchers.(Lit.to_int l0) c l1;
+    Watch.push s.watchers.(Lit.to_int l1) c l0
 
 let () =
   let s = state in
   try
     for id = 0 to num_clauses - 1 do
-      Solver.register_clause s @@
-      ClauseArena.alloc s.clauses  false 0 (process_lits clauses_pre.(id))
+      register_clause s (process_lits clauses_pre.(id))
     done;
 
     for v = 1 to num_vars do
       Decision_heap.insert s.unassigned_vars (Var.of_int v)
     done;
+    s.simp_props <- CA.count_lits s.clauses;
 
     Solver.solve s;
 

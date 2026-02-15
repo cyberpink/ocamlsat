@@ -1,18 +1,21 @@
 module Make(El : sig type t [@@immediate] end) = struct
+  module Slice = Mono_slice.Make(El)
   type t =
     { mutable data : El.t array;
       mutable length : int;
       dummy : El.t }
 
-  let[@inline] length v = v.length
-  let[@inline] capacity v = Array.length v.data
+  let[@inline always] length v = v.length
+  let[@inline always] capacity v = Array.length v.data
 
+  let unsafe_slice ~offset ~length v = Slice.make ~offset ~length v.data
+  
   (* from Stdlib.Dynarray *)
   let next_capacity n =
     let n' =
       if n <= 512 then n * 2
       else n + n / 2
-    in min (max 8 n') Sys.max_array_length
+    in Int.min (Int.max 8 n') Sys.max_array_length
 
   let grow v =
     let new_cap = next_capacity (capacity v) in
@@ -93,7 +96,7 @@ module Make(El : sig type t [@@immediate] end) = struct
     v.length <- new_len
 
   let truncate v len =
-    let len = max 0 (min v.length len) in
+    let len = Int.max 0 (Int.min v.length len) in
     (* don't need to fill for a uniform vec *)
     (* Array.fill v.data len (v.length - len) v.dummy; *)
     v.length <- len
